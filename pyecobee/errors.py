@@ -35,3 +35,8 @@ class EcobeeAuthMfaRequiredError(EcobeeError):
 # Sensor errors
 class InvalidSensorError(EcobeeError):
     """Raised when remote sensor not present on thermostat."""
+
+
+# Program errors
+class InvalidClimateError(EcobeeError):
+    """Raised when climateRef not present in the thermostat's program."""

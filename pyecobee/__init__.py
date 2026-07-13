@@ -46,6 +46,7 @@ from .errors import (
     EcobeeAuthMfaRequiredError,
     EcobeeAuthUnknownError,
     ExpiredTokenError,
+    InvalidClimateError,
     InvalidSensorError,
     InvalidTokenError,
 )
@@ -87,6 +88,20 @@ def _generate_pkce_pair() -> tuple[str, str]:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
     return verifier, challenge
+
+
+def _find_climate(programs: dict, climate_ref: str) -> dict:
+    """Return the climate dict matching ``climate_ref`` in a program.
+
+    Raises :class:`InvalidClimateError` if no climate in
+    ``programs["climates"]`` has that climateRef.
+    """
+    for climate in programs["climates"]:
+        if climate["climateRef"] == climate_ref:
+            return climate
+    raise InvalidClimateError(
+        f"no climate with climateRef '{climate_ref}' on this thermostat's program"
+    )
 
 
 @dataclass
@@ -1231,6 +1246,111 @@ class Ecobee(object):
             }
         }
         log_msg_action = "upate climate sensors"
+
+        try:
+            self._request_with_refresh(
+                "POST", ECOBEE_ENDPOINT_THERMOSTAT, log_msg_action, body=body
+            )
+        except (ExpiredTokenError, InvalidTokenError) as err:
+            raise err
+
+    def set_climate_temperatures(
+        self,
+        index: int,
+        climate_ref: str,
+        heat_temp: Optional[float] = None,
+        cool_temp: Optional[float] = None,
+    ) -> None:
+        """Set the heat and/or cool target temperature for a comfort setting.
+
+        ``climate_ref`` is the climateRef of a comfort setting (e.g. Home,
+        Away, Sleep) in the thermostat's program, not a currently active hold.
+        """
+        programs = self.thermostats[index]["program"]
+        programs.pop("currentClimateRef", None)
+        climate = _find_climate(programs, climate_ref)
+
+        if heat_temp is not None:
+            climate["heatTemp"] = int(heat_temp * 10)
+        if cool_temp is not None:
+            climate["coolTemp"] = int(cool_temp * 10)
+
+        body = {
+            "selection": {
+                "selectionType": "thermostats",
+                "selectionMatch": self.thermostats[index]["identifier"],
+            },
+            "thermostat": {"program": programs},
+        }
+        log_msg_action = "set climate temperatures"
+
+        try:
+            self._request_with_refresh(
+                "POST", ECOBEE_ENDPOINT_THERMOSTAT, log_msg_action, body=body
+            )
+        except (ExpiredTokenError, InvalidTokenError) as err:
+            raise err
+
+    def set_climate_fan_mode(self, index: int, climate_ref: str, fan_mode: str) -> None:
+        """Set the fan mode (auto, on) for a comfort setting.
+
+        Sets both heatFan and coolFan to ``fan_mode``, matching the single
+        Fan control ecobee's own app exposes per comfort setting.
+        """
+        programs = self.thermostats[index]["program"]
+        programs.pop("currentClimateRef", None)
+        climate = _find_climate(programs, climate_ref)
+
+        climate["heatFan"] = fan_mode
+        climate["coolFan"] = fan_mode
+
+        body = {
+            "selection": {
+                "selectionType": "thermostats",
+                "selectionMatch": self.thermostats[index]["identifier"],
+            },
+            "thermostat": {"program": programs},
+        }
+        log_msg_action = "set climate fan mode"
+
+        try:
+            self._request_with_refresh(
+                "POST", ECOBEE_ENDPOINT_THERMOSTAT, log_msg_action, body=body
+            )
+        except (ExpiredTokenError, InvalidTokenError) as err:
+            raise err
+
+    def set_schedule_slots(
+        self,
+        index: int,
+        day_index: int,
+        start_slot: int,
+        end_slot: int,
+        climate_ref: str,
+    ) -> None:
+        """Assign a comfort setting to a range of half-hour schedule slots.
+
+        ``day_index`` is 0-6 into ``program.schedule``. ``start_slot`` and
+        ``end_slot`` are inclusive 0-47 half-hour indices within that day.
+        """
+        programs = self.thermostats[index]["program"]
+        programs.pop("currentClimateRef", None)
+        # Fail fast on an unknown climateRef rather than silently writing it
+        # into the schedule.
+        _find_climate(programs, climate_ref)
+
+        schedule = programs["schedule"]
+        for slot in range(start_slot, end_slot + 1):
+            schedule[day_index][slot] = climate_ref
+
+        body = {
+            "selection": {
+                "selectionType": "thermostats",
+                "selectionMatch": self.thermostats[index]["identifier"],
+            },
+            "thermostat": {"program": programs},
+        }
+        log_msg_action = "set schedule slots"
 
         try:
             self._request_with_refresh(
