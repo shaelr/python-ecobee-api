@@ -40,3 +40,8 @@ class InvalidSensorError(EcobeeError):
 # Program errors
 class InvalidClimateError(EcobeeError):
     """Raised when climateRef not present in the thermostat's program."""
+
+
+# Notification/reminder errors
+class InvalidEquipmentError(EcobeeError):
+    """Raised when an equipment type isn't present in notificationSettings."""

@@ -47,6 +47,7 @@ from .errors import (
     EcobeeAuthUnknownError,
     ExpiredTokenError,
     InvalidClimateError,
+    InvalidEquipmentError,
     InvalidSensorError,
     InvalidTokenError,
 )
@@ -101,6 +102,21 @@ def _find_climate(programs: dict, climate_ref: str) -> dict:
             return climate
     raise InvalidClimateError(
         f"no climate with climateRef '{climate_ref}' on this thermostat's program"
+    )
+
+
+def _find_equipment(notification_settings: dict, equipment_type: str) -> dict:
+    """Return the equipment dict matching ``equipment_type`` in notificationSettings.
+
+    Raises :class:`InvalidEquipmentError` if no equipment in
+    ``notification_settings["equipment"]`` has that type (e.g. the
+    thermostat doesn't track a "furnaceFilter" reminder at all).
+    """
+    for equipment in notification_settings.get("equipment", []):
+        if equipment.get("type") == equipment_type:
+            return equipment
+    raise InvalidEquipmentError(
+        f"no equipment with type '{equipment_type}' on this thermostat's notification settings"
     )
 
 
@@ -657,6 +673,59 @@ class Ecobee(object):
     def get_equipment_notifications(self, index: int) -> str:
         """Returns equipment notifications from a thermostat based on list index of self.thermostats."""
         return self.thermostats[index]["notificationSettings"]["equipment"]
+
+    def set_equipment_reminder(
+        self,
+        index: int,
+        equipment_type: str,
+        enabled: Optional[bool] = None,
+        filter_life: Optional[int] = None,
+        filter_life_units: Optional[str] = None,
+        last_service_date: Optional[str] = None,
+    ) -> None:
+        """Update one equipment reminder's settings (e.g. a furnace filter).
+
+        ``equipment_type`` matches an entry's ``type`` in
+        ``notificationSettings.equipment`` (e.g. ``"furnaceFilter"``).
+        ``last_service_date`` is a ``"YYYY-MM-DD"`` string.
+
+        Requires ``include_notifications`` to have been set when
+        constructing :class:`Ecobee`, or ``notificationSettings`` won't be
+        present on the cached thermostat at all.
+
+        The field names here (``enabled``, ``filterLife``,
+        ``filterLifeUnits``, ``remindMeDate``) are this library's best
+        understanding of ecobee's schema and have not been confirmed
+        against a live payload -- verify against a real account and fix
+        the field names below if any of them don't stick.
+        """
+        notification_settings = self.thermostats[index]["notificationSettings"]
+        equipment = _find_equipment(notification_settings, equipment_type)
+
+        if enabled is not None:
+            equipment["enabled"] = enabled
+        if filter_life is not None:
+            equipment["filterLife"] = filter_life
+        if filter_life_units is not None:
+            equipment["filterLifeUnits"] = filter_life_units
+        if last_service_date is not None:
+            equipment["remindMeDate"] = last_service_date
+
+        body = {
+            "selection": {
+                "selectionType": "thermostats",
+                "selectionMatch": self.thermostats[index]["identifier"],
+            },
+            "thermostat": {"notificationSettings": notification_settings},
+        }
+        log_msg_action = "set equipment reminder"
+
+        try:
+            self._request_with_refresh(
+                "POST", ECOBEE_ENDPOINT_THERMOSTAT, log_msg_action, body=body
+            )
+        except (ExpiredTokenError, InvalidTokenError) as err:
+            raise err
 
     def update(self) -> bool:
         """Gets new thermostat data from ecobee; wrapper for get_thermostats."""
