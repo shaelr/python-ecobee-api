@@ -681,23 +681,27 @@ class Ecobee(object):
         enabled: Optional[bool] = None,
         filter_life: Optional[int] = None,
         filter_life_units: Optional[str] = None,
-        last_service_date: Optional[str] = None,
+        remind_me_date: Optional[str] = None,
     ) -> None:
         """Update one equipment reminder's settings (e.g. a furnace filter).
 
         ``equipment_type`` matches an entry's ``type`` in
         ``notificationSettings.equipment`` (e.g. ``"furnaceFilter"``).
-        ``last_service_date`` is a ``"YYYY-MM-DD"`` string.
+        ``remind_me_date`` is a ``"YYYY-MM-DD"`` string -- confirmed against
+        a live account to be the *next reminder due* date, not the last
+        service date (despite the field name reading either way at a
+        glance). Callers wanting to set a last-service date need to add
+        ``filter_life`` months to it themselves before calling this.
 
         Requires ``include_notifications`` to have been set when
         constructing :class:`Ecobee`, or ``notificationSettings`` won't be
         present on the cached thermostat at all.
 
-        The field names here (``enabled``, ``filterLife``,
-        ``filterLifeUnits``, ``remindMeDate``) are this library's best
-        understanding of ecobee's schema and have not been confirmed
-        against a live payload -- verify against a real account and fix
-        the field names below if any of them don't stick.
+        The remaining field names here (``enabled``, ``filterLife``,
+        ``filterLifeUnits``) are this library's best understanding of
+        ecobee's schema and have not been confirmed against a live payload
+        -- verify against a real account and fix the field names below if
+        any of them don't stick.
         """
         notification_settings = self.thermostats[index]["notificationSettings"]
         equipment = _find_equipment(notification_settings, equipment_type)
@@ -708,8 +712,8 @@ class Ecobee(object):
             equipment["filterLife"] = filter_life
         if filter_life_units is not None:
             equipment["filterLifeUnits"] = filter_life_units
-        if last_service_date is not None:
-            equipment["remindMeDate"] = last_service_date
+        if remind_me_date is not None:
+            equipment["remindMeDate"] = remind_me_date
 
         body = {
             "selection": {
