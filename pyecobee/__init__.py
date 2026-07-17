@@ -645,6 +645,7 @@ class Ecobee(object):
                 "includeWeather": "true",
                 "includeSettings": "true",
                 "includeLocation": "true",
+                "includeAlerts": "true",
             }
         }
         if self.include_notifications:
