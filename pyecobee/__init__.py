@@ -681,27 +681,31 @@ class Ecobee(object):
         enabled: Optional[bool] = None,
         filter_life: Optional[int] = None,
         filter_life_units: Optional[str] = None,
+        filter_last_changed: Optional[str] = None,
         remind_me_date: Optional[str] = None,
     ) -> None:
         """Update one equipment reminder's settings (e.g. a furnace filter).
 
         ``equipment_type`` matches an entry's ``type`` in
         ``notificationSettings.equipment`` (e.g. ``"furnaceFilter"``).
-        ``remind_me_date`` is a ``"YYYY-MM-DD"`` string -- confirmed against
-        a live account to be the *next reminder due* date, not the last
-        service date (despite the field name reading either way at a
-        glance). Callers wanting to set a last-service date need to add
-        ``filter_life`` months to it themselves before calling this.
+        Confirmed against a live account's real payload:
+
+        * ``filter_last_changed`` (-> ``filterLastChanged``) is the actual
+          last-service date, a ``"YYYY-MM-DD"`` string.
+        * ``remind_me_date`` (-> ``remindMeDate``) is the *next reminder
+          due* date -- not derived from ``filterLastChanged`` +
+          ``filter_life`` on read, either: it was observed to roll forward
+          on its own as periods elapsed (e.g. from 2026-04-08 to
+          2026-07-08 with no edits in between). Callers changing
+          ``filter_last_changed`` to actually restart the reminder
+          countdown should also advance ``remind_me_date`` themselves
+          (typically to ``filter_last_changed`` + ``filter_life`` months).
+        * ``enabled``, ``filter_life`` (-> ``filterLife``), and
+          ``filter_life_units`` (-> ``filterLifeUnits``) are also confirmed.
 
         Requires ``include_notifications`` to have been set when
         constructing :class:`Ecobee`, or ``notificationSettings`` won't be
         present on the cached thermostat at all.
-
-        The remaining field names here (``enabled``, ``filterLife``,
-        ``filterLifeUnits``) are this library's best understanding of
-        ecobee's schema and have not been confirmed against a live payload
-        -- verify against a real account and fix the field names below if
-        any of them don't stick.
         """
         notification_settings = self.thermostats[index]["notificationSettings"]
         equipment = _find_equipment(notification_settings, equipment_type)
@@ -712,6 +716,8 @@ class Ecobee(object):
             equipment["filterLife"] = filter_life
         if filter_life_units is not None:
             equipment["filterLifeUnits"] = filter_life_units
+        if filter_last_changed is not None:
+            equipment["filterLastChanged"] = filter_last_changed
         if remind_me_date is not None:
             equipment["remindMeDate"] = remind_me_date
 
